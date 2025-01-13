@@ -46,6 +46,7 @@ public static String version()      {  return "v1.04"  }
 *   7/12/2020: 1.02 - minor bug fixes
 *   7/17/2020: 1.03 - Added option to use automatic hub location and fixed bug where manual city names with spaces in them failed
 *   6/21/2022: 1.04 - weatherstack has downgraded free API calls to 250 per month so added a 3 hour update option
+*   1/12/2025: 1.05 - weatherstack has downgraded free API calls to 100 per month so added an 8 hour update option
 */
 
 import groovy.transform.Field
@@ -81,7 +82,7 @@ metadata    {
         attribute "visualWithText", "string"
         attribute "wind_mph", "string"
         attribute "wind_kph", "string"
-		attribute "wind_mps", "string"
+	    attribute "wind_mps", "string"
         attribute "wind_degree", "string"
         attribute "wind_dir", "string"
 
@@ -122,9 +123,9 @@ metadata    {
         input "cityName", "text", title: "Override default city name?", required:false, defaultValue:null
         input "isFahrenheit", "bool", title:"Use Imperial units?", required:true, defaultValue:true
         input "dashClock", "bool", title:"Udate dashboard clock':' every 2 seconds?", required:true, defaultValue:false
-        input "pollEvery", "enum", title:"Poll Api interval?\nrecommended setting 60 minutes.\nilluminance is updated independently.", required:true, defaultValue:"1Hour", options:["15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes", "2Hours":"120 minutes", "3Hours":"180 minutes"]
-		input "luxEvery", "enum", title:"Illuminance update interval?", required:true, defaultValue:"5Minutes", options:["5Minutes":"5 minutes","10Minutes":"10 minutes","15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes"]
-		input "isDebug", "bool", title:"Debug mode", required:true, defaultValue:false
+        input "pollEvery", "enum", title:"Poll Api interval?\nrecommended setting 8 hours with free API.\nilluminance is updated independently.", required:true, defaultValue:"8Hours", options:["15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes", "3Hours":"180 minutes", "8Hours":"480 minutes" ]
+	input "luxEvery", "enum", title:"Illuminance update interval?", required:true, defaultValue:"5Minutes", options:["5Minutes":"5 minutes","10Minutes":"10 minutes","15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes"]
+	input "isDebug", "bool", title:"Debug mode", required:true, defaultValue:false
    }
 
 }
@@ -138,7 +139,12 @@ def updated()   {
     poll()
     if (isDebug) {log.debug ">>>>> api polltime: $pollEvery"}
 
-    "runEvery${pollEvery}"(poll)
+    if (pollEvery == "8Hours") {
+    }
+    else {
+       "runEvery${pollEvery}"(poll)
+        }
+    
     "runEvery${luxEvery}"(updateLux)
     
     if (dashClock)  updateClock();
@@ -222,7 +228,7 @@ def poll()      {
 		sendEventPublish(name: "wind_mps", value: ((obs.current.wind_speed / 3.6f).round(1)), unit: "MPS", displayed: true)
 	}
 	else
-    	sendEventPublish(name: "wind_kph", value: obs.current.wind_speed, unit: "KPH", displayed: true)
+    sendEventPublish(name: "wind_kph", value: obs.current.wind_speed, unit: "KPH", displayed: true)
     sendEventPublish(name: "wind_degree", value: obs.current.wind_degree, unit: "DEGREE", displayed: true)
     sendEventPublish(name: "wind_dir", value: obs.current.wind_dir, displayed: true)
     sendEventPublish(name: "pressure", value: obs.current.pressure, unit: "${(isFahrenheit ? 'IN' : 'MBAR')}", displayed: true)
@@ -243,8 +249,8 @@ def poll()      {
     sendEventPublish(name: "localSunrise", value: localSunrise, displayed: true)
     sendEventPublish(name: "localSunset", value: localSunset, displayed: true)
 
-	def wind_mytile=(isFahrenheit ? "${Math.round(obs.current.wind_speed)}" + " mph " : "${Math.round(obs.current.wind_speed)}" + " kph ")
-	sendEventPublish(name: "wind_mytile", value: wind_mytile, displayed: true)
+    def wind_mytile=(isFahrenheit ? "${Math.round(obs.current.wind_speed)}" + " mph " : "${Math.round(obs.current.wind_speed)}" + " kph ")
+    sendEventPublish(name: "wind_mytile", value: wind_mytile, displayed: true)
 
     def mytext = (cityName ?: obs.location.name) + ', ' + obs.location.region 
    	
@@ -254,6 +260,11 @@ def poll()      {
 	mytext += '<br>' + obs.current.weather_descriptions
 
     sendEventPublish(name: "mytile", value: mytext, displayed: true)
+    
+    if (pollEvery == "8Hours") {
+    	if (isDebug) { log.debug "setting poll to run in 8 hours" }	
+        runIn(28800, "poll")}
+    
     return
 }
 
