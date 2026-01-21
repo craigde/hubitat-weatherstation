@@ -36,7 +36,7 @@
 *
 ***********************************************************************************************************************/
 
-public static String version()      {  return "v1.04"  }
+public static String version()      {  return "v1.06"  }
 
 /***********************************************************************************************************************
 *
@@ -47,6 +47,7 @@ public static String version()      {  return "v1.04"  }
 *   7/17/2020: 1.03 - Added option to use automatic hub location and fixed bug where manual city names with spaces in them failed
 *   6/21/2022: 1.04 - weatherstack has downgraded free API calls to 250 per month so added a 3 hour update option
 *   1/12/2025: 1.05 - weatherstack has downgraded free API calls to 100 per month so added an 8 hour update option
+*   1/21/2026: 1.06 - Code quality improvements: fixed undefined variable bug, corrected wind speed conversion, added missing braces, fixed polling logic, improved code formatting
 */
 
 import groovy.transform.Field
@@ -82,7 +83,7 @@ metadata    {
         attribute "visualWithText", "string"
         attribute "wind_mph", "string"
         attribute "wind_kph", "string"
-	    attribute "wind_mps", "string"
+        attribute "wind_mps", "string"
         attribute "wind_degree", "string"
         attribute "wind_dir", "string"
 
@@ -117,33 +118,32 @@ metadata    {
     }
 
     preferences     {
-		input "useHubLocation", "bool", title:"Use Automatic Hub Location", required:true, defaultValue:true
+        input "useHubLocation", "bool", title:"Use Automatic Hub Location", required:true, defaultValue:true
         input "hubLocation", "text", title:"Enter Zip code, city name or latitude,longitude if not using Automation Hub Location", required:false
         input "apiKey", "text", title:"WeatherStack key?", required:true
         input "cityName", "text", title: "Override default city name?", required:false, defaultValue:null
         input "isFahrenheit", "bool", title:"Use Imperial units?", required:true, defaultValue:true
-        input "dashClock", "bool", title:"Udate dashboard clock':' every 2 seconds?", required:true, defaultValue:false
+        input "dashClock", "bool", title:"Update dashboard clock':' every 2 seconds?", required:true, defaultValue:false
         input "pollEvery", "enum", title:"Poll Api interval?\nrecommended setting 8 hours with free API.\nilluminance is updated independently.", required:true, defaultValue:"8Hours", options:["15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes", "3Hours":"180 minutes", "8Hours":"480 minutes" ]
-	input "luxEvery", "enum", title:"Illuminance update interval?", required:true, defaultValue:"5Minutes", options:["5Minutes":"5 minutes","10Minutes":"10 minutes","15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes"]
-	input "isDebug", "bool", title:"Debug mode", required:true, defaultValue:false
-   }
+        input "luxEvery", "enum", title:"Illuminance update interval?", required:true, defaultValue:"5Minutes", options:["5Minutes":"5 minutes","10Minutes":"10 minutes","15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes"]
+        input "isDebug", "bool", title:"Debug mode", required:true, defaultValue:false
+    }
 
 }
 
 def updated()   {
-	unschedule()
+    unschedule()
     state.tz_id = null
-	state.localDate = null
+    state.localDate = null
     state.clockSeconds = true
     state.precip = null
     poll()
     if (isDebug) {log.debug ">>>>> api polltime: $pollEvery"}
 
-    if (pollEvery == "8Hours") {
-    }
-    else {
+    // 8-hour polling is handled via runIn() at the end of poll() due to API limits
+    if (pollEvery != "8Hours") {
        "runEvery${pollEvery}"(poll)
-        }
+    }
     
     "runEvery${luxEvery}"(updateLux)
     
@@ -225,10 +225,11 @@ def poll()      {
     sendEventPublish(name: "visualWithText", value: '<img src=' + imgName + '><br>' + obs.current.weather_descriptions, displayed: true)
 	if (isFahrenheit)	{
 	    sendEventPublish(name: "wind_mph", value: obs.current.wind_speed, unit: "MPH", displayed: true)
-		sendEventPublish(name: "wind_mps", value: ((obs.current.wind_speed / 3.6f).round(1)), unit: "MPS", displayed: true)
+		sendEventPublish(name: "wind_mps", value: ((obs.current.wind_speed / 2.237f).round(1)), unit: "MPS", displayed: true)
 	}
-	else
-    sendEventPublish(name: "wind_kph", value: obs.current.wind_speed, unit: "KPH", displayed: true)
+	else	{
+	    sendEventPublish(name: "wind_kph", value: obs.current.wind_speed, unit: "KPH", displayed: true)
+	}
     sendEventPublish(name: "wind_degree", value: obs.current.wind_degree, unit: "DEGREE", displayed: true)
     sendEventPublish(name: "wind_dir", value: obs.current.wind_dir, displayed: true)
     sendEventPublish(name: "pressure", value: obs.current.pressure, unit: "${(isFahrenheit ? 'IN' : 'MBAR')}", displayed: true)
@@ -400,7 +401,6 @@ private sendEventPublish(evt)	{
 def updateClock()       {
     runIn(2, updateClock)
     if (!state.tz_id)       return;
-    if (!tz_id)       return;
     def nowTime = new Date()
     def tZ = TimeZone.getTimeZone(state.tz_id)
     sendEventPublish(name: "local_time", value: nowTime.format((state.clockSeconds ? "HH:mm" : "HH mm"), tZ), displayed: true)
