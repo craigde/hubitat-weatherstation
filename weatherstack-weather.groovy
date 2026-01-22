@@ -36,7 +36,7 @@
 *
 ***********************************************************************************************************************/
 
-public static String version()      {  return "v1.04"  }
+public static String version()      {  return "v1.07"  }
 
 /***********************************************************************************************************************
 *
@@ -47,6 +47,8 @@ public static String version()      {  return "v1.04"  }
 *   7/17/2020: 1.03 - Added option to use automatic hub location and fixed bug where manual city names with spaces in them failed
 *   6/21/2022: 1.04 - weatherstack has downgraded free API calls to 250 per month so added a 3 hour update option
 *   1/12/2025: 1.05 - weatherstack has downgraded free API calls to 100 per month so added an 8 hour update option
+*   1/21/2026: 1.06 - Code quality improvements: fixed undefined variable bug, corrected wind speed conversion, added missing braces, fixed polling logic, improved code formatting
+*   1/21/2026: 1.07 - Removed redundant and unused code: duplicate sunrise/sunset attributes, duplicate weather condition attribute, never-set attributes (feelsLike_c/f, vis_km/miles, last_updated), and unused attributesMap
 */
 
 import groovy.transform.Field
@@ -71,10 +73,7 @@ metadata    {
         attribute "localtime_epoch", "string"
         attribute "local_time", "string"
         attribute "local_date", "string"
-        attribute "last_updated_epoch", "string"
-        attribute "last_updated", "string"
         attribute "is_day", "string"
-        attribute "condition_text", "string"
         attribute "condition_icon", "string"
         attribute "condition_icon_url", "string"
         attribute "condition_code", "string"
@@ -82,20 +81,14 @@ metadata    {
         attribute "visualWithText", "string"
         attribute "wind_mph", "string"
         attribute "wind_kph", "string"
-	    attribute "wind_mps", "string"
+        attribute "wind_mps", "string"
         attribute "wind_degree", "string"
         attribute "wind_dir", "string"
 
         attribute "cloud", "string"
-        attribute "feelsLike_c", "string"
-        attribute "feelsLike_f", "string"
-        attribute "vis_km", "string"
-        attribute "vis_miles", "string"
 
         attribute "location", "string"
         attribute "city", "string"
-        attribute "local_sunrise", "string"
-        attribute "local_sunset", "string"
         attribute "twilight_begin", "string"
         attribute "twilight_end", "string"
         attribute "illuminated", "string"
@@ -117,33 +110,32 @@ metadata    {
     }
 
     preferences     {
-		input "useHubLocation", "bool", title:"Use Automatic Hub Location", required:true, defaultValue:true
+        input "useHubLocation", "bool", title:"Use Automatic Hub Location", required:true, defaultValue:true
         input "hubLocation", "text", title:"Enter Zip code, city name or latitude,longitude if not using Automation Hub Location", required:false
         input "apiKey", "text", title:"WeatherStack key?", required:true
         input "cityName", "text", title: "Override default city name?", required:false, defaultValue:null
         input "isFahrenheit", "bool", title:"Use Imperial units?", required:true, defaultValue:true
-        input "dashClock", "bool", title:"Udate dashboard clock':' every 2 seconds?", required:true, defaultValue:false
+        input "dashClock", "bool", title:"Update dashboard clock':' every 2 seconds?", required:true, defaultValue:false
         input "pollEvery", "enum", title:"Poll Api interval?\nrecommended setting 8 hours with free API.\nilluminance is updated independently.", required:true, defaultValue:"8Hours", options:["15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes", "3Hours":"180 minutes", "8Hours":"480 minutes" ]
-	input "luxEvery", "enum", title:"Illuminance update interval?", required:true, defaultValue:"5Minutes", options:["5Minutes":"5 minutes","10Minutes":"10 minutes","15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes"]
-	input "isDebug", "bool", title:"Debug mode", required:true, defaultValue:false
-   }
+        input "luxEvery", "enum", title:"Illuminance update interval?", required:true, defaultValue:"5Minutes", options:["5Minutes":"5 minutes","10Minutes":"10 minutes","15Minutes":"15 minutes","30Minutes":"30 minutes","1Hour":"60 minutes"]
+        input "isDebug", "bool", title:"Debug mode", required:true, defaultValue:false
+    }
 
 }
 
 def updated()   {
-	unschedule()
+    unschedule()
     state.tz_id = null
-	state.localDate = null
+    state.localDate = null
     state.clockSeconds = true
     state.precip = null
     poll()
     if (isDebug) {log.debug ">>>>> api polltime: $pollEvery"}
 
-    if (pollEvery == "8Hours") {
-    }
-    else {
+    // 8-hour polling is handled via runIn() at the end of poll() due to API limits
+    if (pollEvery != "8Hours") {
        "runEvery${pollEvery}"(poll)
-        }
+    }
     
     "runEvery${luxEvery}"(updateLux)
     
@@ -190,9 +182,7 @@ def poll()      {
     def twilight_end = new Date().parse("yyyy-MM-dd'T'HH:mm:ssXXX", sunriseAndSunset.results.civil_twilight_end, tZ)
 
     def localSunrise = sunriseTime.format("HH:mm", tZ)
-    sendEventPublish(name: "local_sunrise", value: localSunrise, descriptionText: "Sunrise today is at $localSunrise", displayed: true)
     def localSunset = sunsetTime.format("HH:mm", tZ)
-    sendEventPublish(name: "local_sunset", value: localSunset, descriptionText: "Sunset today at is $localSunset", displayed: true)
     def tB = twilight_begin.format("HH:mm", tZ)
     sendEventPublish(name: "twilight_begin", value: tB, descriptionText: "Twilight begins today at $tB", displayed: true)
     def tE = twilight_end.format("HH:mm", tZ)
@@ -216,7 +206,6 @@ def poll()      {
 
     sendEventPublish(name: "temperature", value: obs.current.temperature, unit: "${(isFahrenheit ? 'F' : 'C')}", displayed: true)
     sendEventPublish(name: "is_day", value: obs.current.is_day, displayed: true)
-    sendEventPublish(name: "condition_text", value: obs.current.weather_descriptions, displayed: true)
     sendEventPublish(name: "condition_icon", value: '<img src=' + obs.current.weather_icons + '>', displayed: true)
     sendEventPublish(name: "condition_icon_url", value: obs.current.weather_icons, displayed: true)
     sendEventPublish(name: "condition_code", value: obs.current.weather_code, displayed: true)
@@ -225,10 +214,11 @@ def poll()      {
     sendEventPublish(name: "visualWithText", value: '<img src=' + imgName + '><br>' + obs.current.weather_descriptions, displayed: true)
 	if (isFahrenheit)	{
 	    sendEventPublish(name: "wind_mph", value: obs.current.wind_speed, unit: "MPH", displayed: true)
-		sendEventPublish(name: "wind_mps", value: ((obs.current.wind_speed / 3.6f).round(1)), unit: "MPS", displayed: true)
+		sendEventPublish(name: "wind_mps", value: ((obs.current.wind_speed / 2.237f).round(1)), unit: "MPS", displayed: true)
 	}
-	else
-    sendEventPublish(name: "wind_kph", value: obs.current.wind_speed, unit: "KPH", displayed: true)
+	else	{
+	    sendEventPublish(name: "wind_kph", value: obs.current.wind_speed, unit: "KPH", displayed: true)
+	}
     sendEventPublish(name: "wind_degree", value: obs.current.wind_degree, unit: "DEGREE", displayed: true)
     sendEventPublish(name: "wind_dir", value: obs.current.wind_dir, displayed: true)
     sendEventPublish(name: "pressure", value: obs.current.pressure, unit: "${(isFahrenheit ? 'IN' : 'MBAR')}", displayed: true)
@@ -400,7 +390,6 @@ private sendEventPublish(evt)	{
 def updateClock()       {
     runIn(2, updateClock)
     if (!state.tz_id)       return;
-    if (!tz_id)       return;
     def nowTime = new Date()
     def tZ = TimeZone.getTimeZone(state.tz_id)
     sendEventPublish(name: "local_time", value: nowTime.format((state.clockSeconds ? "HH:mm" : "HH mm"), tZ), displayed: true)
@@ -560,55 +549,6 @@ public static String replaceAll(String str) {
         [code: 389, day: "no", img: '35.png', ],	// NIGHT - Moderate or heavy rain with thunder
         [code: 392, day: "no", img: '46.png', ],	// NIGHT - Patchy light snow with thunder
         [code: 395, day: "no", img: '18.png', ]	// NIGHT - Moderate or heavy snow with thunder
-]
-
-@Field final Map	attributesMap = [
-	city:				'City',
-	cloud:				'Cloud',
-	cCF:				'Cloud cover factor',
-	condition_code:		'Condition code',
-	condition_icon:		'Condition icon',
-	condition_icon_url:	'Condition icon URL',
-	condition_text:		'Condition text',
-	weather:			'Condition text',
-	country:			'Country',
-	feelsLike:			'Feels like (in default unit)',
-	humidity:			'Humidity',
-	illuminance:		'Illuminance',
-	illuminated:		'Dashboard illuminance',
-	is_day:				'Is daytime',
-	localtime_epoch:	'Localtime epoch',
-	local_date:			'Local date',
-	localSunrise:		'Local sunrise',
-	local_sunrise:		'Local sunrise',
-	localSunset:		'Local sunset',
-	local_sunset:		'Local sunset',
-	twilight_begin:		'Twilight begin',
-	twilight_end:		'Twilight end',
-	local_time:			'Local time',
-	tz_id:				'Timezone ID',
-	name:				'Location name',
-	region:				'Region',
-	location:			'Location name with region',
-	lon:				'Longitude',
-	lat:				'Latitude',
-	last_updated:		'Last updated',
-	last_updated_epoch:	'Last updated epoch',
-	mytile:				'Mytile for dashboard',
-	precip:			    'Precipitation in default units',
-	pressure:			'Pressure',
-	temperature:		'Temperature',
-    visibility:         'Visibility in default units' ,
-	visual:				'Visual weather',
-	visualWithText:		'Visual weather with text',
-	wind:				'Wind (in default unit)',
-	wind_degree:		'Wind Degree',
-	wind_kph:			'Wind KPH',
-	wind_mph:			'Wind MPH',
-	wind_mps:			'Wind MPS',
-	wind_degree:		'Wind degree',
-	wind_dir:			'Wind direction',
-	wind_mytile:		'Wind mytile'
 ]
 
 //**********************************************************************************************************************
